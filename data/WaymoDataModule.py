@@ -89,15 +89,15 @@ class WaymoDataModule(pl.LightningDataModule):
         :param stage: either 'fit', 'validate', 'test' or 'predict'
         :return: None
         """
-        self._train_ = WaymoDataset(self._dataset_directory.joinpath("train"),
+        self._train_ = WaymoDataset(self._dataset_directory,
                                     point_cloud_transform=self._pillarization_transform,
                                     drop_invalid_point_function=self._drop_points_function,
                                     n_points=self._n_points, apply_pillarization=self.apply_pillarization)
-        self._val_ = WaymoDataset(self._dataset_directory.joinpath("valid"),
-                                  point_cloud_transform=self._pillarization_transform,
-                                  drop_invalid_point_function=self._drop_points_function,
-                                  apply_pillarization=self.apply_pillarization,
-                                  n_points=self._n_points)
+        self._val_ = None #WaymoDataset(self._dataset_directory.joinpath("valid"),
+                                  # point_cloud_transform=self._pillarization_transform,
+                                  # drop_invalid_point_function=self._drop_points_function,
+                                  # apply_pillarization=self.apply_pillarization,
+                                  # n_points=self._n_points)
         if self._has_test:
             self._test_ = WaymoDataset(self._dataset_directory.joinpath("test"),
                                        point_cloud_transform=self._pillarization_transform,
@@ -119,8 +119,9 @@ class WaymoDataModule(pl.LightningDataModule):
         Return a data loader for validation
         :return: the dataloader to use
         """
-        return DataLoader(self._val_, self._batch_size, shuffle=False, num_workers=self._num_workers,
-                          collate_fn=self._collate_fn)
+        return None
+        # DataLoader(self._val_, self._batch_size, shuffle=False, num_workers=self._num_workers,
+        #                   collate_fn=self._collate_fn)
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:
         """
