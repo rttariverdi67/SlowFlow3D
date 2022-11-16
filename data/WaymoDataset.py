@@ -156,14 +156,20 @@ class WaymoDataset(Dataset):
             exit(1)
         return self.metadata['look_up_table'][index][0][0]
 
-    def read_point_cloud_pair(self, index):
+    def read_point_cloud_pair(self, index, bboxes=False):
         """
         Read from disk the current and previous point cloud given an index
         """
         # In the lookup table entries with (current_frame, previous_frame) are stored
         #print(self.metadata['look_up_table'][index][0][0])
-        current_frame = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][0][0]))['frame']
-        previous_frame = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][1][0]))['frame']
+        current = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][0][0]))
+        current_frame = current['frame']
+        previous = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][1][0]))
+        previous_frame = previous['frame']
+        if bboxes:
+            current_bboxes = current['bboxes']
+            previous_bboxes = previous['bboxes']
+            return current_frame, previous_frame, current_bboxes, previous_bboxes
         return current_frame, previous_frame
 
     def get_pose_transform(self, index):
