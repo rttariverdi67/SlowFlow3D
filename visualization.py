@@ -16,7 +16,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     parser.add_argument('data_directory', type=str)
-    parser.add_argument('config_file', type=str)
+    parser.add_argument('config_file', default=None, type=str)
     # NOTE: IF MODEL IS NONE IT WILL VISUALIZE GROUND TRUTH DATA
     parser.add_argument('--model_path', default=None, type=str)
 
@@ -46,10 +46,23 @@ if __name__ == '__main__':
     if args.start_frame > args.end_frame:
         raise ValueError("Start frame cannot be greater than end frame")
 
+    # temporaly  setup fixed config_info
+    config_info = {}
+    config_info["grid_cell_size"] = {"value": 0.33203125}
+    config_info["x_min"] = {"value": -85}
+    config_info["x_max"] = {"value": 85}
+    config_info["y_min"] = {"value": -85}
+    config_info["y_max"] = {"value": 85}
+    config_info["z_min"] = {"value": -3}
+    config_info["z_max"] = {"value": 3}
+    config_info["n_pillars_x"] = {"value": 512}
+    config_info["n_pillars_y"] = {"value": 512}
+
     # Load config file (must be downloaded from Weights and Biases), it has the name of config.yaml
-    with open(args.config_file, 'r') as stream:
+    # with open(args.config_file, 'r') as stream:
+    if 1:
         try:
-            config_info = yaml.safe_load(stream)
+            # config_info = yaml.safe_load(stream)
             grid_cell_size = config_info['grid_cell_size']['value']
             x_min = config_info['x_min']['value']
             y_min = config_info['y_min']['value']
@@ -105,7 +118,7 @@ if __name__ == '__main__':
 
     from visualization.laserscanvis import LaserScanVis
     vis = LaserScanVis(dataset=waymo_dataset,
-                       start_frame=args.start_frame,
+                       start_frame=150,
                        end_frame=args.end_frame,
                        model=model,
                        vis_previous_current=args.vis_previous_current,

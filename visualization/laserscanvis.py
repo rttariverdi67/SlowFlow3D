@@ -31,6 +31,7 @@ class LaserScanVis:
         self.vis_previous_current = vis_previous_current  # True if you want to display 2 point clouds instead flows
         self.online = online  # True if predicting flows in real time, false it reads from disk the flows
         self.video = video
+        self.arrows = False
         if self.video is not None:
             date = datetime.now().strftime("%Y_%m_%d-%I:%M:%S_%p")
             video_folder_name = "video_" + self.video + "_" + str(date)
@@ -83,7 +84,11 @@ class LaserScanVis:
 
             self.gt_grid.add_widget(self.gt_view, 0, 0)
             self.gt_vis = visuals.Markers()
+            # arrows
+
+            self.gt_arrows = visuals.Arrow(arrow_color='blue', arrow_size=0.1, width=0.01)
             self.gt_view.add(self.gt_vis)
+            self.gt_view.add(self.gt_arrows)
             visuals.XYZAxis(parent=self.gt_view.scene)
 
 
@@ -175,10 +180,22 @@ class LaserScanVis:
                                        size=1)
 
             if self.video is None or self.video == "gt":
+
+                color = np.array([[1.5, 0.3, 0.2, 0.1]]).repeat(gt_flows.shape[0], 0)
+                masks = (gt_flows ** 2).sum(-1) > 0.005
+                if self.arrows:
+                    self.gt_arrows.set_data(pos=np.concatenate([raw_point_cloud, raw_point_cloud + 0.2*gt_flows], axis=-1)[masks].reshape(-1, 3),
+                                            arrows=np.concatenate([raw_point_cloud, raw_point_cloud + 0.2*gt_flows], axis=-1)[masks],
+                                            width=5, connect='segments')
+                else:
+                    self.gt_arrows.set_data(pos=np.zeros((2, 3)),
+                                            arrows=np.zeros((2, 6)),
+                                            width=5, connect='segments')
+
                 self.gt_vis.set_data(raw_point_cloud,
-                                       face_color=rgb_flow,
-                                       edge_color=rgb_flow,
-                                       size=1)
+                                     face_color=rgb_flow,
+                                     edge_color=rgb_flow,
+                                     size=1)
 
         if self.video is None or self.video == "model":
             self.predicted_vis.update()
@@ -189,6 +206,7 @@ class LaserScanVis:
                 camera = self.predicted_view.camera
         if self.video is None or self.video == "gt":
             self.gt_vis.update()
+            self.gt_arrows.update()
             if self.video == "gt":
                 self.save_screenshot(self.gt_canvas)
                 if self.offset != self.first_frame:
@@ -243,6 +261,9 @@ class LaserScanVis:
         elif event.key == 'B':
             self.offset -= 1
             self.update_scan()
+        elif event.key == 'A':
+            self.arrows = not self.arrows
+            print("Arrows: ", self.arrows)
         elif event.key == 'Q' or event.key == 'Escape':
             self.destroy()
 
