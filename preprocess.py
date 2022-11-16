@@ -82,7 +82,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('input_directory', type=str)
     parser.add_argument('output_directory', type=str)
-    parser.add_argument('--n_cores', default=None, type=int)
+    parser.add_argument('--n_cores', default=1, type=int)
     parser.add_argument('--dataset', default='waymo', type=str)
     args = parser.parse_args()
 
@@ -116,28 +116,32 @@ if __name__ == '__main__':
 
         print(f"{n_cores} number of cores available")
 
-        pool = mp.Pool(n_cores)
+        if n_cores == 1:
+            for tfrecord_file in tqdm(glob.glob(os.path.join(input_directory, '*.tfrecord'))):
+                preprocess_wrap(tfrecord_file)
+        else:
+            pool = mp.Pool(n_cores)
 
-        tfrecord_filenames = []
-        os.chdir(input_directory)
-        for file in glob.glob("*.tfrecord"):
-            file_name = os.path.abspath(file)
-            tfrecord_filenames.append(file_name)
+            tfrecord_filenames = []
+            os.chdir(input_directory)
+            for file in glob.glob("*.tfrecord"):
+                file_name = os.path.abspath(file)
+                tfrecord_filenames.append(file_name)
 
-        t = time.time()
+            t = time.time()
 
-        for _ in tqdm(pool.imap_unordered(preprocess_wrap, tfrecord_filenames), total=len(tfrecord_filenames)):
-            pass
+            for _ in tqdm(pool.imap_unordered(preprocess_wrap, tfrecord_filenames), total=len(tfrecord_filenames)):
+                pass
 
-        # Close Pool and let all the processes complete
-        pool.close()
-        pool.join()  # postpones the execution of next line of code until all processes in the queue are done.
+            # Close Pool and let all the processes complete
+            pool.close()
+            pool.join()  # postpones the execution of next line of code until all processes in the queue are done.
 
         # Merge look up tables
         print("Merging individual metadata...")
         merge_metadata(os.path.abspath(output_directory))
 
-        print(f"Preprocessing duration: {(time.time() - t):.2f} s")
+        # print(f"Preprocessing duration: {(time.time() - t):.2f} s")
     elif args.dataset == 'flying_things':
         preprocess_flying_things(input_dir=input_directory, output_dir=output_directory)
     else:
