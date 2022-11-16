@@ -11,8 +11,10 @@ import numpy as np
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2, dataset_pb2 as open_dataset
 from waymo_open_dataset.utils import frame_utils
-
-
+from waymo_open_dataset.utils import keypoint_data
+from waymo_open_dataset.utils import box_utils
+import os
+import open3d as o3d
 def convert_range_image_to_point_cloud(frame,
                                        range_images,
                                        camera_projections,
@@ -144,6 +146,68 @@ def parse_range_image_and_camera_projection(frame):
     return range_images, camera_projections, point_flows, range_image_top_pose
 
 
+
+def box_center_to_corner(box_center):
+    # To return
+    corner_boxes = np.zeros((8, 3))
+
+    translation = box_center[0:3]
+    w,l, h = box_center[3], box_center[4], box_center[5]
+    rotation = box_center[6]
+
+    # Create a bounding box outline
+    bounding_box = np.array([
+        [-l/2, -l/2, l/2, l/2, -l/2, -l/2, l/2, l/2],
+        [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2],
+        [-h/2, -h/2, -h/2, -h/2, h/2, h/2, h/2, h/2]])
+
+    # Standard 3x3 rotation matrix around the Z axis
+    rotation_matrix = np.array([
+        [np.cos(rotation), -np.sin(rotation), 0.0],
+        [np.sin(rotation), np.cos(rotation), 0.0],
+        [0.0, 0.0, 1.0]])
+    swap_axes = np.array([[0.,-1,0], [1,0,0], [0,0,1]])
+
+    # Repeat the [x, y, z] eight times
+    eight_points = np.tile(translation, (8, 1))
+
+    # Translate the rotated bounding box by the
+    # original center position to obtain the final box
+    corner_box = np.dot(
+        swap_axes@rotation_matrix, bounding_box) + eight_points.transpose()
+    return corner_box.transpose()
+
+
+def get_bbox_from_frame(frame, return_line_sets=False):
+    labels = keypoint_data.group_object_labels(frame)
+    line_sets = []
+    cbs = []
+    for object_id in labels.keys():
+        obj = labels[object_id]
+        box = box_utils.box_to_tensor(obj.laser.box)[tf.newaxis, :]
+        corner_box = box_center_to_corner(box.numpy()[0])
+        cbs.append(corner_box)
+    cbs = np.array(cbs)
+
+    if return_line_sets:
+
+        lines = [[0, 1], [1, 2], [2, 3], [0, 3],
+                 [4, 5], [5, 6], [6, 7], [4, 7],
+                 [0, 4], [1, 5], [2, 6], [3, 7]]
+
+        # Use the same color for all lines
+        colors = [[1, 0, 0] for _ in range(len(lines))]
+
+        for corner_box in cbs:
+            line_set = o3d.geometry.LineSet()
+            line_set.points = o3d.utility.Vector3dVector(corner_box)
+            line_set.lines = o3d.utility.Vector2iVector(lines)
+            line_set.colors = o3d.utility.Vector3dVector(colors)
+            line_sets.append(line_set)
+
+    return cbs, line_sets
+
+
 def save_point_cloud(compressed_frame, file_path):
     """
     Compute the point cloud from a frame and stores it into disk.
@@ -156,9 +220,21 @@ def save_point_cloud(compressed_frame, file_path):
         - transform - [,16] flattened transformation matrix
     """
     frame = get_uncompressed_frame(compressed_frame)
+    bboxes, _ = get_bbox_from_frame(frame)
     points, flows = compute_features(frame)
     point_cloud = np.hstack((points, flows))
-    np.savez_compressed(file_path, frame=point_cloud)
+    # import open3d as o3d
+    # pcd = o3d.geometry.PointCloud()
+    # pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+    # o3d.visualization.draw_geometries([pcd, *line_sets])  # zoom=0.3412,
+    #                                                       #front=[0.4257, -0.2125, -0.8795],
+    #                                                       #lookat=[2.6172, 2.0475, 1.532],
+    #                                                       #up=[-0.0694, -0.9768, 0.2024]
+
+    np.savez_compressed(file_path, frame=point_cloud, bboxes=bboxes)
+    # folder, file_extension = os.path.splitext(file_path)
+    # file_extension = "bboxes_" + file_extension
+    # np.savez_compressed(folder + file_extension, frame=bboxes)
     transform = list(frame.pose.transform)
     return points, flows, transform
 
