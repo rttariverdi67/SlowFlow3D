@@ -28,7 +28,7 @@ import pickle
 import numpy as np
 from torch.utils.data import Dataset
 
-from data.util import get_coordinates_and_features
+from data.util import get_coordinates_and_features, get_bbox
 
 
 # TODO: tensor operations to make it faster?
@@ -44,7 +44,8 @@ class WaymoDataset(Dataset):
                  drop_invalid_point_function=None,
                  point_cloud_transform=None,
                  n_points=None,
-                 apply_pillarization=True):
+                 apply_pillarization=True,
+                 return_boxes = False):
         """
         Args:
             data_path (string): Folder with the compressed data.
@@ -58,7 +59,7 @@ class WaymoDataset(Dataset):
         # It has information regarding the files and transformations
 
         self.data_path = data_path
-
+        self.return_boxes = return_boxes
         self._drop_invalid_point_function = drop_invalid_point_function
         self._point_cloud_transform = point_cloud_transform
 
@@ -86,7 +87,7 @@ class WaymoDataset(Dataset):
         A point cloud has a shape of [N, F], being N the number of points and the
         F to the number of features, which is [x, y, z, intensity, elongation]
         """
-        current_frame, previous_frame = self.read_point_cloud_pair(index)
+        current_frame, previous_frame, current_bbox, previous_bbox, current_ind, previous_ind = self.read_point_cloud_pair(index)
         current_frame_pose, previous_frame_pose = self.get_pose_transform(index)
         flows = self.get_flows(current_frame)
 
@@ -102,6 +103,8 @@ class WaymoDataset(Dataset):
         # https://github.com/waymo-research/waymo-open-dataset/blob/bbcd77fc503622a292f0928bfa455f190ca5946e/waymo_open_dataset/utils/box_utils.py#L179
         previous_frame = get_coordinates_and_features(previous_frame, transform=C_T_P)
         current_frame = get_coordinates_and_features(current_frame, transform=None)
+        if previous_bbox is not None:
+            previous_bbox = get_bbox(previous_bbox, transform=C_T_P)
 
         # Drop invalid points according to the method supplied
         if self._drop_invalid_point_function is not None:
@@ -117,7 +120,8 @@ class WaymoDataset(Dataset):
             previous_frame = (previous_frame, None)
             current_frame = (current_frame, None)
         # This returns a tuple of augmented pointcloud and grid indices
-
+        if self.return_boxes:
+            return (previous_frame, current_frame), flows, current_bbox, previous_bbox, current_ind, previous_ind
         return (previous_frame, current_frame), flows
 
     def subsample_points(self, current_frame, previous_frame, flows):
@@ -156,7 +160,7 @@ class WaymoDataset(Dataset):
             exit(1)
         return self.metadata['look_up_table'][index][0][0]
 
-    def read_point_cloud_pair(self, index, bboxes=False):
+    def read_point_cloud_pair(self, index):
         """
         Read from disk the current and previous point cloud given an index
         """
@@ -166,11 +170,16 @@ class WaymoDataset(Dataset):
         current_frame = current['frame']
         previous = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][1][0]))
         previous_frame = previous['frame']
-        if bboxes:
+        current_bboxes, previous_bboxes = None, None
+        current_ids, previous_ids = None, None
+        if self.return_boxes:
             current_bboxes = current['bboxes']
             previous_bboxes = previous['bboxes']
-            return current_frame, previous_frame, current_bboxes, previous_bboxes
-        return current_frame, previous_frame
+            current_ids = current['obj_ids']
+            previous_ids = previous['obj_ids']
+
+        return current_frame, previous_frame, current_bboxes, previous_bboxes, current_ids, previous_ids
+        # return current_frame, previous_frame
 
     def get_pose_transform(self, index):
         """

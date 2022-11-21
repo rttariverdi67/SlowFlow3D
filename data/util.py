@@ -60,6 +60,24 @@ def get_coordinates_and_features(point_cloud, transform=None):
     return point_cloud
 
 
+def get_bbox(bboxes, transform=None):
+    """
+    Parse a point clound into coordinates and features.
+    :param bboxes: Full [N, 8, 3] point cloud
+    :param transform: Optional parameter. Transformation matrix to apply
+    to the coordinates of the point cloud
+    :return: [N, 8, 3] where N is the number of bboxes, N - 8 (edges) and 3 is [x, y, z]
+    """
+    if transform is not None:
+        ones = np.ones((bboxes.shape[0], bboxes.shape[1], 1))
+        points_coord = np.concatenate((bboxes, ones), axis=-1)
+        points_coord = np.einsum("ab, Bcb -> Bca", transform, points_coord)
+        # points_coord = points_coord[0:-1, :]
+        # points_coord = points_coord.T
+    # point_cloud = np.hstack((points_coord, features))
+    return points_coord[:, :, 0:3]
+
+
 def _pad_batch(batch):
     # Get the number of points in the largest point cloud
     true_number_of_points = [e[0].shape[0] for e in batch]

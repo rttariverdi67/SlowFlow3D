@@ -31,7 +31,7 @@ class LaserScanVis:
         self.vis_previous_current = vis_previous_current  # True if you want to display 2 point clouds instead flows
         self.online = online  # True if predicting flows in real time, false it reads from disk the flows
         self.video = video
-        self.arrows = False
+        self.arrows, self.bbox = False, True
         if self.video is not None:
             date = datetime.now().strftime("%Y_%m_%d-%I:%M:%S_%p")
             video_folder_name = "video_" + self.video + "_" + str(date)
@@ -85,10 +85,11 @@ class LaserScanVis:
             self.gt_grid.add_widget(self.gt_view, 0, 0)
             self.gt_vis = visuals.Markers()
             # arrows
-
+            self.gt_bbox = visuals.Line(pos=np.array([[0, 0, 0], [0, 0, 0]]), color='red', width=2.0, method='gl')
             self.gt_arrows = visuals.Arrow(arrow_color='blue', arrow_size=0.1, width=0.01)
             self.gt_view.add(self.gt_vis)
             self.gt_view.add(self.gt_arrows)
+            self.gt_view.add(self.gt_bbox)
             visuals.XYZAxis(parent=self.gt_view.scene)
 
 
@@ -143,7 +144,7 @@ class LaserScanVis:
 
     def update_scan(self):
         self.dataset.pillarize(False)
-        (previous_frame, current_frame), flows = self.dataset[self.offset]
+        (previous_frame, current_frame), flows, c_bbox, p_bbox, c_ids, p_ids = self.dataset[self.offset]
         gt_flows = flows[:, :-1]  # Remove the label
         raw_point_cloud = current_frame[0][:, 0:3]  # NOTE: Select the point cloud not the grid indices
         raw_point_cloud_previous = previous_frame[0][:, 0:3]  # NOTE: Select the point cloud not the grid indices
@@ -191,6 +192,19 @@ class LaserScanVis:
                     self.gt_arrows.set_data(pos=np.zeros((2, 3)),
                                             arrows=np.zeros((2, 6)),
                                             width=5, connect='segments')
+                if self.bbox:
+                    p_bbox = p_bbox[:,(0,1, 0,4, 0,3, 1,2, 1,5, 2,3, 2,6, 3,7, 4,7, 7,6, 5,6, 4,5)]
+                    c_bbox = c_bbox[:, (0, 1, 0, 4, 0, 3, 1, 2, 1, 5, 2, 3, 2, 6, 3, 7, 4, 7, 7, 6, 5, 6, 4, 5)]
+                    color_p = np.array([[[0.5, 0.3, 0.2]]]).repeat(p_bbox.shape[0], 0).repeat(c_bbox.shape[1], 1)
+                    color_c = np.array([[[0.2, 0.3, 0.5]]]).repeat(c_bbox.shape[0], 0).repeat(c_bbox.shape[1], 1)
+
+                    self.gt_bbox.set_data(pos=np.concatenate([p_bbox, c_bbox], axis=0).reshape(-1, 3),
+                                          color=np.concatenate([color_p, color_c], axis=0).reshape(-1, 3),
+                                          width=5, connect='segments')
+
+                    # c_bbox = np.concatenate([c_bbox, c_bbox[:, [0,4,1,5,2,6,3,7]], c_bbox[:, [0,3,1,5,2,6,4,7]]], axis=1)
+                    # segments_to_connect[::8] = 0
+
 
                 self.gt_vis.set_data(raw_point_cloud,
                                      face_color=rgb_flow,

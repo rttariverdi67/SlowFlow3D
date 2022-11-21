@@ -15,6 +15,8 @@ from waymo_open_dataset.utils import keypoint_data
 from waymo_open_dataset.utils import box_utils
 import os
 import open3d as o3d
+
+
 def convert_range_image_to_point_cloud(frame,
                                        range_images,
                                        camera_projections,
@@ -146,27 +148,26 @@ def parse_range_image_and_camera_projection(frame):
     return range_images, camera_projections, point_flows, range_image_top_pose
 
 
-
 def box_center_to_corner(box_center):
     # To return
     corner_boxes = np.zeros((8, 3))
 
     translation = box_center[0:3]
-    w,l, h = box_center[3], box_center[4], box_center[5]
+    w, l, h = box_center[3], box_center[4], box_center[5]
     rotation = box_center[6]
 
     # Create a bounding box outline
     bounding_box = np.array([
-        [-l/2, -l/2, l/2, l/2, -l/2, -l/2, l/2, l/2],
-        [w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2],
-        [-h/2, -h/2, -h/2, -h/2, h/2, h/2, h/2, h/2]])
+        [-l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2],
+        [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2],
+        [-h / 2, -h / 2, -h / 2, -h / 2, h / 2, h / 2, h / 2, h / 2]])
 
     # Standard 3x3 rotation matrix around the Z axis
     rotation_matrix = np.array([
         [np.cos(rotation), -np.sin(rotation), 0.0],
         [np.sin(rotation), np.cos(rotation), 0.0],
         [0.0, 0.0, 1.0]])
-    swap_axes = np.array([[0.,-1,0], [1,0,0], [0,0,1]])
+    swap_axes = np.array([[0., -1, 0], [1, 0, 0], [0, 0, 1]])
 
     # Repeat the [x, y, z] eight times
     eight_points = np.tile(translation, (8, 1))
@@ -174,7 +175,7 @@ def box_center_to_corner(box_center):
     # Translate the rotated bounding box by the
     # original center position to obtain the final box
     corner_box = np.dot(
-        swap_axes@rotation_matrix, bounding_box) + eight_points.transpose()
+        swap_axes @ rotation_matrix, bounding_box) + eight_points.transpose()
     return corner_box.transpose()
 
 
@@ -182,7 +183,9 @@ def get_bbox_from_frame(frame, return_line_sets=False):
     labels = keypoint_data.group_object_labels(frame)
     line_sets = []
     cbs = []
+    obj_ids = []
     for object_id in labels.keys():
+        obj_ids.append(object_id)
         obj = labels[object_id]
         box = box_utils.box_to_tensor(obj.laser.box)[tf.newaxis, :]
         corner_box = box_center_to_corner(box.numpy()[0])
@@ -205,10 +208,81 @@ def get_bbox_from_frame(frame, return_line_sets=False):
             line_set.colors = o3d.utility.Vector3dVector(colors)
             line_sets.append(line_set)
 
-    return cbs, line_sets
+    return cbs, obj_ids, line_sets
 
 
-def save_point_cloud(compressed_frame, file_path):
+def points_in_boxes(boxes: np.ndarray, points: np.ndarray, wlh_factor: float = 1.0):
+    """
+    Checks whether points are inside the box.
+    Picks one corner as reference (p1) and computes the vector to a target point (v).
+    Then for each of the 3 axes, project v onto the axis and compare the length.
+    Inspired by: https://math.stackexchange.com/a/1552579
+    :param boxes: (N, 8, 3) array of boxes
+    :param points: <np.float: 3, n>.
+    :param wlh_factor: Inflates or deflates the box.
+    :return: <np.bool: n, >.
+    """
+
+    p1 = boxes[:, 0, :]
+    p_x = boxes[:, 4, :]
+    p_y = boxes[:, 1, :]
+    p_z = boxes[:, 3, :]
+
+    i = p_x - p1
+    j = p_y - p1
+    k = p_z - p1
+
+    v = np.repeat(points[:, :3].reshape(1, -1, 3), p1.shape[0], 0) - p1.reshape((-1, 1, 3))
+
+    iv = np.einsum("bni, bi -> bn", v, i)
+    jv = np.einsum("bni, bi -> bn", v, j)
+    kv = np.einsum("bni, bi -> bn", v, k)
+
+    mask_x = np.logical_and(0 <= iv, iv <= (i.reshape(-1, 1, 3) @ i.reshape(-1, 3, 1))[:, :1, 0])
+    mask_y = np.logical_and(0 <= jv, jv <= (j.reshape(-1, 1, 3) @ j.reshape(-1, 3, 1))[:, :1, 0])
+    mask_z = np.logical_and(0 <= kv, kv <= (k.reshape(-1, 1, 3) @ k.reshape(-1, 3, 1))[:, :1, 0])
+    mask = np.logical_and(np.logical_and(mask_x, mask_y), mask_z)
+
+    return mask.any(0)
+
+
+def points_in_box(box, points: np.ndarray, wlh_factor: float = 1.0):
+    """
+    Checks whether points are inside the box.
+    Picks one corner as reference (p1) and computes the vector to a target point (v).
+    Then for each of the 3 axes, project v onto the axis and compare the length.
+    Inspired by: https://math.stackexchange.com/a/1552579
+    :param box: <Box>.
+    :param points: <np.float: 3, n>.
+    :param wlh_factor: Inflates or deflates the box.
+    :return: <np.bool: n, >.
+    """
+    corners = box
+
+    p1 = corners[0, :]
+    p_x = corners[4, :]
+    p_y = corners[1, :]
+    p_z = corners[3, :]
+
+    i = p_x - p1
+    j = p_y - p1
+    k = p_z - p1
+
+    v = points - p1.reshape((1, -1))
+
+    iv = np.dot(v, i.reshape(-1, 1))
+    jv = np.dot(v, j.reshape(-1, 1))
+    kv = np.dot(v, k.reshape(-1, 1))
+
+    mask_x = np.logical_and(0 <= iv, iv <= np.dot(i, i))
+    mask_y = np.logical_and(0 <= jv, jv <= np.dot(j, j))
+    mask_z = np.logical_and(0 <= kv, kv <= np.dot(k, k))
+    mask = np.logical_and(np.logical_and(mask_x, mask_y), mask_z)
+
+    return mask
+
+
+def save_point_cloud(compressed_frame, file_path, visualize=False):
     """
     Compute the point cloud from a frame and stores it into disk.
     :param compressed_frame: compressed frame from a TFRecord
@@ -220,18 +294,35 @@ def save_point_cloud(compressed_frame, file_path):
         - transform - [,16] flattened transformation matrix
     """
     frame = get_uncompressed_frame(compressed_frame)
-    bboxes, _ = get_bbox_from_frame(frame)
+    bboxes, obj_ids, line_sets = get_bbox_from_frame(frame, return_line_sets=False)
     points, flows = compute_features(frame)
     point_cloud = np.hstack((points, flows))
-    # import open3d as o3d
-    # pcd = o3d.geometry.PointCloud()
-    # pcd.points = o3d.utility.Vector3dVector(points[:, :3])
-    # o3d.visualization.draw_geometries([pcd, *line_sets])  # zoom=0.3412,
-    #                                                       #front=[0.4257, -0.2125, -0.8795],
-    #                                                       #lookat=[2.6172, 2.0475, 1.532],
-    #                                                       #up=[-0.0694, -0.9768, 0.2024]
+    # box_mask = ["16VirfZWTl9i9XP8fNxf4Q" in obj_id for obj_id in obj_ids]
+    # cutted_points = points[:, :3][points_in_boxes(bboxes[box_mask], points)]
+    if visualize:
+        cutted_points = points[:, :3][points_in_boxes(bboxes, points)]
+        # cutted_points = []
+        # for bbox in bboxes:
+        #     mask = points_in_box(bbox, points[:, 0:3])
+        #     cutted_points.append(points[:, :3][mask[:, 0]])
+        # cutted_points = np.concatenate(cutted_points, axis=0)
+        # points_in_box(bboxes[0], points[:, :3])
 
-    np.savez_compressed(file_path, frame=point_cloud, bboxes=bboxes)
+        bboxes_ = o3d.geometry.PointCloud()
+        bboxes_.points = o3d.utility.Vector3dVector(cutted_points[:, :3])
+        bboxes_.paint_uniform_color([0.1, 0.1, 0.7])
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+        pcd.paint_uniform_color([0.7, 0.1, 0.7])
+
+        # o3d.visualization.draw_geometries([pcd, bboxes_, *line_sets])  # zoom=0.3412,
+        o3d.visualization.draw_geometries([bboxes_])  # zoom=0.3412,
+        # front=[0.4257, -0.2125, -0.8795],
+        # lookat=[2.6172, 2.0475, 1.532],
+        # up=[-0.0694, -0.9768, 0.2024]
+
+    np.savez_compressed(file_path, frame=point_cloud, bboxes=bboxes, obj_ids=obj_ids)
     # folder, file_extension = os.path.splitext(file_path)
     # file_extension = "bboxes_" + file_extension
     # np.savez_compressed(folder + file_extension, frame=bboxes)
@@ -239,7 +330,7 @@ def save_point_cloud(compressed_frame, file_path):
     return points, flows, transform
 
 
-def preprocess(tfrecord_file, output_path, frames_per_segment = None):
+def preprocess(tfrecord_file, output_path, frames_per_segment=None):
     """
     TFRecord file to store in a suitable form for training
     in disk. A point cloud in disk has dimensions [N, 9] where N is the number of points
@@ -456,7 +547,7 @@ def readFlow(name):
 
 def generate_flying_things_point_cloud(fname_disparity, fname_disparity_next_frame, fname_disparity_change,
                                        fname_optical_flow, image, image_next_frame, max_cut=35, focal_length=1050.,
-                                       n = 2048, add_label=True):
+                                       n=2048, add_label=True):
     # generate needed data
     disparity_np, _ = load_pfm(fname_disparity)
     disparity_next_frame_np, _ = load_pfm(fname_disparity_next_frame)
@@ -518,9 +609,9 @@ def generate_flying_things_point_cloud(fname_disparity, fname_disparity_next_fra
                                            depth_next_frame_np[int(sampled_pix2_y[i]), int(sampled_pix2_x[i])]) for i in
                              range(n_2)])
 
-    current_rgb2 = np.array([[rgb_next_frame_np[h-1-int(sampled_pix2_y[i]), int(sampled_pix2_x[i]), 0],
-                              rgb_next_frame_np[h-1-int(sampled_pix2_y[i]), int(sampled_pix2_x[i]), 1],
-                              rgb_next_frame_np[h-1-int(sampled_pix2_y[i]), int(sampled_pix2_x[i]), 2]]
+    current_rgb2 = np.array([[rgb_next_frame_np[h - 1 - int(sampled_pix2_y[i]), int(sampled_pix2_x[i]), 0],
+                              rgb_next_frame_np[h - 1 - int(sampled_pix2_y[i]), int(sampled_pix2_x[i]), 1],
+                              rgb_next_frame_np[h - 1 - int(sampled_pix2_y[i]), int(sampled_pix2_x[i]), 2]]
                              for i in range(n)])
 
     # Compute backward flow
@@ -541,7 +632,8 @@ def generate_flying_things_point_cloud(fname_disparity, fname_disparity_next_fra
     valid_mask_fov2 = np.ones_like(future_pos2_depth, dtype=bool)
     for i in range(future_pos2_depth.shape[0]):
         if 0 < future_pix2_y[i] < h and 0 < future_pix2_x[i] < w:
-            future_pos2_foreground_depth[i] = bilinear_interp_val(depth_next_frame_np, future_pix2_y[i], future_pix2_x[i])
+            future_pos2_foreground_depth[i] = bilinear_interp_val(depth_next_frame_np, future_pix2_y[i],
+                                                                  future_pix2_x[i])
         else:
             valid_mask_fov2[i] = False
     valid_mask_occ2 = (future_pos2_foreground_depth - future_pos2_depth) > -5e-1

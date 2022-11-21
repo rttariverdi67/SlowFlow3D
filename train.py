@@ -63,6 +63,7 @@ def get_args():
     parser.add_argument('--dataset', default='waymo',
                         choices=["waymo", 'flying_things'],
                         help="Dataset Type to train on.")
+
     parser.add_argument('--x_max', default=85, type=float, help="x boundary in positive direction")
     parser.add_argument('--x_min', default=-85, type=float, help="x boundary in negative direction")
     parser.add_argument('--y_max', default=85, type=float, help="y boundary in positive direction")
@@ -79,7 +80,10 @@ def get_args():
     parser.add_argument('--full_batch_size', default=None, type=int,
                         help="Batch size for each GPU after which the gradient update should happen.")
     # Logging related parameters
+
     parser.add_argument('--wandb_enable', type=str2bool, nargs='?', const=True, default=False)
+    # wandb_api_key
+    parser.add_argument('--wandb_api_key', type=str, default=None)
     parser.add_argument('--wandb_project', type=str)
     parser.add_argument('--wandb_entity', type=str)
     parser.add_argument('--wandb_run_id', default=None, type=str,
@@ -191,7 +195,7 @@ def cli():
     # Entity is the name of the team
     logger = True  # Not set a logger defaulting to tensorboard
     if args.wandb_enable:
-        wandb_api_key = os.getenv("WANDB_API_KEY")
+        wandb_api_key = args.wandb_api_key
         if not wandb_api_key:
             print("No WandB API key found in env: Set WANDB_API_KEY")
             exit(1)
@@ -245,7 +249,7 @@ def cli():
         plugins = DDPPlugin(find_unused_parameters=False)
 
     # Add a callback for checkpointing after each epoch and the model with best validation loss
-    checkpoint_callback = ModelCheckpoint(monitor="val/loss", mode="min", save_last=True)
+    checkpoint_callback = ModelCheckpoint(monitor="train/loss", mode="min", save_last=True)
 
     # Max epochs can be configured here to, early stopping is also configurable.
     # Some things are definable as callback from pytorch_lightning.callback

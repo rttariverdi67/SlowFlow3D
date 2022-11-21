@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     waymo_dataset = WaymoDataset(args.data_directory)
-
+    waymo_dataset.return_boxes = True
     if args.end_frame is None:
         args.end_frame = len(waymo_dataset)
 
