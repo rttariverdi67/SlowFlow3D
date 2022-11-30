@@ -20,7 +20,7 @@ def flownet_batch(batch, model):
     new_batch = ((previous, current), flows)
     return new_batch
 
-def predict_flows(model, dataset, offset, architecture):
+def predict_flows(model, dataset, offset, architecture="FastFlowNet"):
     if architecture == "FlowNet":
         dataset.pillarize(False)
         (previous_frame, current_frame), flows = dataset[offset]
@@ -33,7 +33,8 @@ def predict_flows(model, dataset, offset, architecture):
         return predicted_flows
     elif architecture == "FastFlowNet":  # This model always uses GPU
         dataset.pillarize(True)
-        (previous_frame, current_frame), flows = dataset[offset]
+        (previous_frame, current_frame), flows, _, _, _, _ = dataset[offset]
+        # (previous_frame, current_frame), flows = dataset[offset]
         batch = custom_collate_batch([((previous_frame, current_frame), flows)])
         with torch.no_grad():
             output = model(batch[0])
@@ -82,3 +83,49 @@ def predict_and_store_flows(model, dataset, architecture):
         predicted_flows = predict_flows(model, dataset, i, architecture)
         flows_name = os.path.join(flows_folder, "flows_" + dataset.get_name_current_frame(i))
         np.savez_compressed(flows_name, flows=predicted_flows)
+
+
+def get_transfmat(bbox1, bbox2):
+    """Get the rotation matrix from bbox1 to bbox2.
+    Args:
+        bbox1 (np.ndarray): (7, ) [x, y, z, w, l, h, yaw]
+        bbox2 (np.ndarray): (7, ) [x, y, z, w, l, h, yaw]
+
+    Returns:
+        np.ndarray: (4, 4) transf matrix
+    """
+    yaw1 = bbox1[6]
+    yaw2 = bbox2[6]
+    yaw_diff = yaw2 - yaw1
+    yaw_diff = yaw_diff % (2 * np.pi)
+    if yaw_diff > np.pi:
+        yaw_diff -= 2 * np.pi
+    delta = bbox2[:3] - bbox1[:3]
+    rot_mat = np.array([[np.cos(yaw_diff), -np.sin(yaw_diff), 0],
+                        [np.sin(yaw_diff), np.cos(yaw_diff), 0],
+                        [0, 0, 1]])
+    transf_mat = np.eye(4)
+    transf_mat[:3, :3] = rot_mat
+    transf_mat[:3, 3] = delta
+    return transf_mat
+
+def get_transfmat_by_points(bbox1, bbox2):
+    """Get the rotation matrix from bbox1 to bbox2.
+    Args:
+        bbox1 (np.ndarray): (8, 3) - points of the bounding box
+        bbox2 (np.ndarray): (8, 3) - points of the bounding box
+
+    Returns:
+        np.ndarray: (4, 4) transf matrix
+    """
+    # Get the center of the bounding box
+    center1 = np.mean(bbox1, axis=0)
+    center2 = np.mean(bbox2, axis=0)
+    # Get the rotation matrix
+    rot_mat = np.linalg.inv(np.cov(bbox1.T)) @ np.cov(bbox2.T)
+    # Get the translation
+    delta = center2 - center1
+    transf_mat = np.eye(4)
+    transf_mat[:3, :3] = rot_mat
+    transf_mat[:3, 3] = delta
+    return transf_mat
