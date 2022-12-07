@@ -18,6 +18,9 @@ from vispy.color import Color
 from visualization.util import get_flows, predict_flows
 import pickle
 
+from data.preprocess import points_in_boxes
+
+
 class LaserScanVis:
     """Class that creates and handles a visualizer for a pointcloud"""
 
@@ -92,7 +95,6 @@ class LaserScanVis:
             self.gt_view.add(self.gt_bbox)
             visuals.XYZAxis(parent=self.gt_view.scene)
 
-
         if self.video is None or self.video == "model":
             # --- Canvas por prediction ---
             self.predicted_canvas = SceneCanvas(keys='interactive', show=True, bgcolor=Color([0.6, 0.6, 0.6]))
@@ -108,7 +110,7 @@ class LaserScanVis:
                 with open('camera_properties.pkl', 'rb') as f:
                     camera = pickle.load(f)
                     self.predicted_view.camera = TurntableCamera(camera['fov'], camera['elevation'], camera['azimuth'],
-                                                          camera['roll'], distance=30)
+                                                                 camera['roll'], distance=30)
             except FileNotFoundError:
                 print("Camera properties do not found, creating default camera")
                 self.predicted_view.camera = 'turntable'
@@ -116,6 +118,8 @@ class LaserScanVis:
             self.predicted_grid.add_widget(self.predicted_view, 0, 0)
             self.predicted_vis = visuals.Markers()
             self.predicted_view.add(self.predicted_vis)
+            self.gt_bbox_ = visuals.Line(pos=np.array([[0, 0, 0], [0, 0, 0]]), color='red', width=2.0, method='gl')
+            self.predicted_view.add(self.gt_bbox_)
             visuals.XYZAxis(parent=self.predicted_view.scene)
 
     def flow_to_rgb(self, flows):
@@ -145,6 +149,11 @@ class LaserScanVis:
     def update_scan(self):
         self.dataset.pillarize(False)
         (previous_frame, current_frame), flows, c_bbox, p_bbox, c_ids, p_ids = self.dataset[self.offset]
+        p_bbox_3d = p_bbox[:, (0, 1, 0, 4, 0, 3, 1, 2, 1, 5, 2, 3, 2, 6, 3, 7, 4, 7, 7, 6, 5, 6, 4, 5)]
+        c_bbox_3d = c_bbox[:, (0, 1, 0, 4, 0, 3, 1, 2, 1, 5, 2, 3, 2, 6, 3, 7, 4, 7, 7, 6, 5, 6, 4, 5)]
+        color_p = np.array([[[0.5, 0.3, 0.2]]]).repeat(p_bbox_3d.shape[0], 0).repeat(c_bbox_3d.shape[1], 1)
+        color_c = np.array([[[0.2, 0.3, 0.5]]]).repeat(c_bbox_3d.shape[0], 0).repeat(c_bbox_3d.shape[1], 1)
+
         gt_flows = flows[:, :-1]  # Remove the label
         raw_point_cloud = current_frame[0][:, 0:3]  # NOTE: Select the point cloud not the grid indices
         raw_point_cloud_previous = previous_frame[0][:, 0:3]  # NOTE: Select the point cloud not the grid indices
@@ -168,50 +177,54 @@ class LaserScanVis:
             green = np.ones(raw_point_cloud.shape) * np.array([0, 1, 0])
             concatenated_colors = np.concatenate((red, green))
             self.predicted_vis.set_data(concatenated_point_cloud,
-                                   face_color=concatenated_colors,
-                                   edge_color=concatenated_colors,
-                                   size=1)
+                                        face_color=concatenated_colors,
+                                        edge_color=concatenated_colors,
+                                        size=1)
 
         else:
             if self.model is not None or not self.online:
                 rgb_flow_predicted = self.flow_to_rgb(predicted_flows)
+                rgb_flow_predicted_filtered = np.zeros(rgb_flow_predicted.shape)
+                masks = points_in_boxes(c_bbox, raw_point_cloud)
+                rgb_flow_predicted_filtered[masks] = rgb_flow_predicted[masks]
                 self.predicted_vis.set_data(raw_point_cloud,
-                                       face_color=rgb_flow_predicted,
-                                       edge_color=rgb_flow_predicted,
-                                       size=1)
+                                            face_color=rgb_flow_predicted_filtered,
+                                            edge_color=rgb_flow_predicted_filtered,
+                                            size=1)
 
             if self.video is None or self.video == "gt":
 
                 color = np.array([[1.5, 0.3, 0.2, 0.1]]).repeat(gt_flows.shape[0], 0)
                 masks = (gt_flows ** 2).sum(-1) > 0.005
                 if self.arrows:
-                    self.gt_arrows.set_data(pos=np.concatenate([raw_point_cloud, raw_point_cloud + 0.2*gt_flows], axis=-1)[masks].reshape(-1, 3),
-                                            arrows=np.concatenate([raw_point_cloud, raw_point_cloud + 0.2*gt_flows], axis=-1)[masks],
-                                            width=5, connect='segments')
+                    self.gt_arrows.set_data(
+                        pos=np.concatenate([raw_point_cloud, raw_point_cloud + 0.2 * gt_flows], axis=-1)[masks].reshape(
+                            -1, 3),
+                        arrows=np.concatenate([raw_point_cloud, raw_point_cloud + 0.2 * gt_flows], axis=-1)[masks],
+                        width=5, connect='segments')
                 else:
                     self.gt_arrows.set_data(pos=np.zeros((2, 3)),
                                             arrows=np.zeros((2, 6)),
                                             width=5, connect='segments')
                 if self.bbox:
-                    p_bbox = p_bbox[:,(0,1, 0,4, 0,3, 1,2, 1,5, 2,3, 2,6, 3,7, 4,7, 7,6, 5,6, 4,5)]
-                    c_bbox = c_bbox[:, (0, 1, 0, 4, 0, 3, 1, 2, 1, 5, 2, 3, 2, 6, 3, 7, 4, 7, 7, 6, 5, 6, 4, 5)]
-                    color_p = np.array([[[0.5, 0.3, 0.2]]]).repeat(p_bbox.shape[0], 0).repeat(c_bbox.shape[1], 1)
-                    color_c = np.array([[[0.2, 0.3, 0.5]]]).repeat(c_bbox.shape[0], 0).repeat(c_bbox.shape[1], 1)
 
-                    self.gt_bbox.set_data(pos=np.concatenate([p_bbox, c_bbox], axis=0).reshape(-1, 3),
+
+                    self.gt_bbox.set_data(pos=np.concatenate([p_bbox_3d, c_bbox_3d], axis=0).reshape(-1, 3),
                                           color=np.concatenate([color_p, color_c], axis=0).reshape(-1, 3),
                                           width=5, connect='segments')
 
+
                     # c_bbox = np.concatenate([c_bbox, c_bbox[:, [0,4,1,5,2,6,3,7]], c_bbox[:, [0,3,1,5,2,6,4,7]]], axis=1)
                     # segments_to_connect[::8] = 0
-
 
                 self.gt_vis.set_data(raw_point_cloud,
                                      face_color=rgb_flow,
                                      edge_color=rgb_flow,
                                      size=1)
-
         if self.video is None or self.video == "model":
+            self.gt_bbox_.set_data(pos=np.concatenate([p_bbox_3d, c_bbox_3d], axis=0).reshape(-1, 3),
+                                   color=np.concatenate([color_p, color_c], axis=0).reshape(-1, 3),
+                                   width=5, connect='segments')
             self.predicted_vis.update()
             if self.video == "model":
                 self.save_screenshot(self.predicted_canvas)
@@ -236,12 +249,11 @@ class LaserScanVis:
                           'distance': camera.distance}
                 pickle.dump(camera, output)
 
-
     def compute_video(self):
         # https://hamelot.io/visualization/using-ffmpeg-to-convert-a-set-of-images-into-a-video/
         date = datetime.now().strftime("%Y_%m_%d-%I:%M:%S_%p")
         # ffmpeg -r 10 -i img_%d.png -qscale 0 -y movie.mp4
-        #os.system(f"ffmpeg -r 10 -i {self.video_folder}/img_%d.png -crf 25 -vcodec mpeg4 -y {self.video_folder}_{date}.mp4")
+        # os.system(f"ffmpeg -r 10 -i {self.video_folder}/img_%d.png -crf 25 -vcodec mpeg4 -y {self.video_folder}_{date}.mp4")
         os.system(f"ffmpeg -r 10 -i {self.video_folder}/img_%d.png -qscale 0 -y {self.video_folder}_{date}.mp4")
 
     def save_screenshot(self, canvas):
@@ -249,7 +261,6 @@ class LaserScanVis:
         frame_path = os.path.join(self.video_folder, frame_name)
         im = _screenshot((0, 0, canvas.size[0], canvas.size[1]))
         imsave(frame_path, im)
-
 
     def press_n(self):
         keyboard = Controller()

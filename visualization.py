@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
     from visualization.laserscanvis import LaserScanVis
     vis = LaserScanVis(dataset=waymo_dataset,
-                       start_frame=150,
+                       start_frame=300,
                        end_frame=args.end_frame,
                        model=model,
                        vis_previous_current=args.vis_previous_current,
