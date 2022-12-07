@@ -48,10 +48,10 @@ def get_args():
                                         "based on Waymo or flying thing dataset",
                             formatter_class=ArgumentDefaultsHelpFormatter)
     # Required arguments
-    parser.add_argument('data_directory', type=str, help="Path to the data directory. "
+    parser.add_argument('--data_directory', type=str, help="Path to the data directory. "
                                                          "Needs to have preprocessed directories "
                                                          "train and valid inside.")
-    parser.add_argument('experiment_name', type=str, help="Name of the experiment for logging purposes.")
+    parser.add_argument('--experiment_name', type=str, help="Name of the experiment for logging purposes.")
     # Model related arguments
     parser.add_argument('--architecture',
                         default='FastFlowNet',
@@ -250,6 +250,7 @@ def cli():
 
     # Add a callback for checkpointing after each epoch and the model with best validation loss
     checkpoint_callback = ModelCheckpoint(monitor="train/loss", mode="min", save_last=True)
+    checkpoint_callback_ = ModelCheckpoint(monitor="train/loss_step", mode="min", save_last=True)
 
     # Max epochs can be configured here to, early stopping is also configurable.
     # Some things are definable as callback from pytorch_lightning.callback
@@ -260,7 +261,7 @@ def cli():
                                             accumulate_grad_batches=gradient_batch_acc,
                                             log_every_n_steps=5,
                                             plugins=plugins,
-                                            callbacks=[checkpoint_callback]
+                                            callbacks=[checkpoint_callback, checkpoint_callback_]
                                             )  # Add Trainer hparams if desired
     # The actual train loop
     trainer.fit(model, data_module)
