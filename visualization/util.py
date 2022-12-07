@@ -5,6 +5,7 @@ import torch
 from tqdm import tqdm
 
 from data.util import custom_collate_batch
+import scipy as sp
 
 
 def flownet_batch(batch, model):
@@ -121,8 +122,12 @@ def get_transfmat_by_points(bbox1, bbox2):
     # Get the center of the bounding box
     center1 = np.mean(bbox1, axis=0)
     center2 = np.mean(bbox2, axis=0)
+    b1 = bbox1 - center1
+    b2 = bbox2 - center2
+    transf = sp.spatial.transform.Rotation.align_vectors(b1, b2)
     # Get the rotation matrix
-    rot_mat = np.linalg.inv(np.cov(bbox1.T)) @ np.cov(bbox2.T)
+    rot_mat = transf[0].as_matrix()
+    #np.linalg.inv(np.cov(bbox1.T - center1[:,None])) @ np.cov(bbox2.T - center2[:,None])
     # Get the translation
     delta = center2 - center1
     transf_mat = np.eye(4)
