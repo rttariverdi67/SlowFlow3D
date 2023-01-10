@@ -72,7 +72,7 @@ if __name__=='__main__':
                     continue
 
                 data_TYPEs = {
-                    1:'TYPE_VEHICLE:',
+                    1:'TYPE_VEHICLE',
                     2:'TYPE_PEDESTRIAN',
                     3:'TYPE_SIGN'}
 
