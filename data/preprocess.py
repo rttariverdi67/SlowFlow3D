@@ -180,6 +180,11 @@ def box_center_to_corner(box_center):
 
 
 def get_bbox_from_frame(frame, return_line_sets=False):
+
+    type_dict={}
+    for ll in frame.laser_labels:
+        type_dict[ll.id] = ll.type
+
     labels = keypoint_data.group_object_labels(frame)
     line_sets = []
     cbs = []
@@ -208,7 +213,7 @@ def get_bbox_from_frame(frame, return_line_sets=False):
             line_set.colors = o3d.utility.Vector3dVector(colors)
             line_sets.append(line_set)
 
-    return cbs, obj_ids, line_sets
+    return cbs, obj_ids, line_sets, type_dict
 
 
 def points_in_boxes(boxes: np.ndarray, points: np.ndarray, wlh_factor: float = 1.0):
@@ -294,7 +299,7 @@ def save_point_cloud(compressed_frame, file_path, visualize=False):
         - transform - [,16] flattened transformation matrix
     """
     frame = get_uncompressed_frame(compressed_frame)
-    bboxes, obj_ids, line_sets = get_bbox_from_frame(frame, return_line_sets=False)
+    bboxes, obj_ids, line_sets, type_dict = get_bbox_from_frame(frame, return_line_sets=False)
     points, flows = compute_features(frame)
     point_cloud = np.hstack((points, flows))
     # box_mask = ["16VirfZWTl9i9XP8fNxf4Q" in obj_id for obj_id in obj_ids]
@@ -322,7 +327,7 @@ def save_point_cloud(compressed_frame, file_path, visualize=False):
         # lookat=[2.6172, 2.0475, 1.532],
         # up=[-0.0694, -0.9768, 0.2024]
 
-    np.savez_compressed(file_path, frame=point_cloud, bboxes=bboxes, obj_ids=obj_ids)
+    np.savez_compressed(file_path, frame=point_cloud, bboxes=bboxes, obj_ids=obj_ids, type_dict=type_dict)
     # folder, file_extension = os.path.splitext(file_path)
     # file_extension = "bboxes_" + file_extension
     # np.savez_compressed(folder + file_extension, frame=bboxes)

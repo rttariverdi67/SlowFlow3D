@@ -87,7 +87,7 @@ class WaymoDataset(Dataset):
         A point cloud has a shape of [N, F], being N the number of points and the
         F to the number of features, which is [x, y, z, intensity, elongation]
         """
-        current_frame, previous_frame, current_bbox, previous_bbox, current_ind, previous_ind = self.read_point_cloud_pair(index)
+        current_frame, previous_frame, current_bbox, previous_bbox, current_ind, previous_ind, current_type_dict, previous_type_dict = self.read_point_cloud_pair(index)
         current_frame_pose, previous_frame_pose = self.get_pose_transform(index)
         flows = self.get_flows(current_frame)
 
@@ -121,7 +121,7 @@ class WaymoDataset(Dataset):
             current_frame = (current_frame, None)
         # This returns a tuple of augmented pointcloud and grid indices
         if self.return_boxes:
-            return (previous_frame, current_frame), flows, current_bbox, previous_bbox, current_ind, previous_ind
+            return (previous_frame, current_frame), flows, current_bbox, previous_bbox, current_ind, previous_ind, current_type_dict, previous_type_dict
         return (previous_frame, current_frame), flows
 
     def subsample_points(self, current_frame, previous_frame, flows):
@@ -166,19 +166,23 @@ class WaymoDataset(Dataset):
         """
         # In the lookup table entries with (current_frame, previous_frame) are stored
         #print(self.metadata['look_up_table'][index][0][0])
-        current = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][0][0]))
+        current = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][0][0]), allow_pickle=True)
         current_frame = current['frame']
-        previous = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][1][0]))
+        previous = np.load(os.path.join(self.data_path, self.metadata['look_up_table'][index][1][0]), allow_pickle=True)
         previous_frame = previous['frame']
         current_bboxes, previous_bboxes = None, None
         current_ids, previous_ids = None, None
+
+        current_type_dict = dict(enumerate(current['type_dict'].flatten(), 0))[0]
+        previous_type_dict = dict(enumerate(previous['type_dict'].flatten(), 0))[0]
+
         if self.return_boxes:
             current_bboxes = current['bboxes']
             previous_bboxes = previous['bboxes']
             current_ids = current['obj_ids']
             previous_ids = previous['obj_ids']
 
-        return current_frame, previous_frame, current_bboxes, previous_bboxes, current_ids, previous_ids
+        return current_frame, previous_frame, current_bboxes, previous_bboxes, current_ids, previous_ids, current_type_dict, previous_type_dict
         # return current_frame, previous_frame
 
     def get_pose_transform(self, index):
