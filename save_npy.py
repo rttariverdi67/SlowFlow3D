@@ -36,8 +36,8 @@ def save_file(name, data):
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--data_path", type=str, default='../patata/datasets/waymo_flow/raw_data_directory/')
 parser.add_argument("--subset", type=str)
-parser.add_argument("--split", type=int)
-parser.add_argument("--chunk_num", type=int)
+parser.add_argument("--split", type=int, default=1)
+parser.add_argument("--chunk_num", type=int, default=0)
 
 
 
@@ -76,6 +76,8 @@ if __name__=='__main__':
                     2:'TYPE_PEDESTRIAN',
                     3:'TYPE_SIGN'}
 
+                if current_type_dict[id_] not in list(data_TYPEs.keys()):
+                    continue
 
                 data_TYPE = data_TYPEs[current_type_dict[id_]]
 
