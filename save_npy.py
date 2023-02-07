@@ -64,7 +64,7 @@ if __name__=='__main__':
             for counter, id_ in enumerate(c_ids):
                 # get current PC inside given bbox[id]
 
-                name = f"{idx_dataset:09d}_{counter:09d}"
+                name = f"{idx_dataset:05d}_{counter:05d}_{id_}"
                 cp = current_frame[0][:, :3][points_in_boxes(c_bbox[counter][None], current_frame[0])]
                 if id_ not in p_ids:
                     continue
@@ -91,7 +91,7 @@ if __name__=='__main__':
                 # get GT transf max from bbox
                 tr_mat = get_transfmat_by_points(c_bbox[counter], p_bbox[(id_ == p_ids).argmax()])
 
-                name = os.path.join(args.data_path, 'waymo_npy_updated',args.subset ,'current', data_TYPE, name)
+                name = os.path.join(args.data_path, 'waymo_npy_name',args.subset, data_TYPE, 'current', name)
 
                 save_file(name, cp)
                 save_file(name.replace('current', 'previous'), cpp)
